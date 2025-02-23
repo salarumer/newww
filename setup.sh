@@ -6,16 +6,16 @@ gcloud services enable bigquery.googleapis.com
 gcloud services enable bigquerydatatransfer.googleapis.com
 
 # Copy public dataset
-bq mk --force=true --dataset thelook_ecommerce
+bq mk --force=true --dataset dataset1
 bq mk \
   --transfer_config \
   --data_source=cross_region_copy \
-  --target_dataset=thelook_ecommerce \
+  --target_dataset=dataset1 \
   --display_name='SQL Talk Sample Data' \
   --schedule_end_time="$(date -u -d '5 mins' +%Y-%m-%dT%H:%M:%SZ)" \
   --params='{
-      "source_project_id":"bigquery-public-data",
-      "source_dataset_id":"thelook_ecommerce",
+      "source_project_id":"mltransit",
+      "source_dataset_id":"dataset1",
       "overwrite_destination_table":"true"
       }'
 
