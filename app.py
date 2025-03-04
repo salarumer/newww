@@ -146,11 +146,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
 
         try:
             response = chat.send_message(prompt)
-            response = gemini_api.generate_text(
-                query=prompt,
-                temperature=0,
-                max_output_tokens=5000  # Set a high limit to prevent truncation
-            )
+            response = response.candidates[0].content.parts[0]
 
             print(response)
 
