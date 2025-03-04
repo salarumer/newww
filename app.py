@@ -138,10 +138,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
         client = bigquery.Client()
 
         prompt += """
-            Please give a concise, high-level summary followed by detail in
-            plain language about where the information in your response is
-            coming from in the database. Only use information that you learn
-            from BigQuery, do not make up information.Also if asked about list of something or sort routes etc then give the response but make sure its not longer than 5000 tokens.
+            I want the response to be complete and dont miss anything about what is asked and Only use information from BigQuery, and do not make up any data.
             """
 
         try:
