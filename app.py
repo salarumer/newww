@@ -14,7 +14,7 @@ import pandas as pd
 BIGQUERY_DATASET_ID = "dataset1"
 MODEL_ID = "gemini-1.5-pro"
 LOCATION = "us-central1"
-DEFAULT_TABLE_ID = "transittable"
+DEFAULT_TABLE_ID = "tansittable"
 
 list_datasets_func = FunctionDeclaration(
     name="list_datasets",
