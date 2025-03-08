@@ -14,6 +14,7 @@ import pandas as pd
 BIGQUERY_DATASET_ID = "dataset1"
 MODEL_ID = "gemini-1.5-pro"
 LOCATION = "us-central1"
+DEFAULT_TABLE_ID = "transittable"
 
 list_datasets_func = FunctionDeclaration(
     name="list_datasets",
@@ -151,6 +152,46 @@ sql_query_tool = Tool(
 )
 
 client = genai.Client(vertexai=True, location=LOCATION)
+bq_client = bigquery.Client()
+
+# New function for schema discovery and context enhancement
+def enhance_model_context(dataset_id=BIGQUERY_DATASET_ID, table_id=DEFAULT_TABLE_ID):
+    """
+    This function queries the table schema and adds context about available columns
+    to help the model intelligently map concepts to actual column names.
+    """
+    try:
+        # Get the table schema
+        table_ref = f"{dataset_id}.{table_id}"
+        table = bq_client.get_table(table_ref)
+        
+        # Extract column names and data types
+        columns = [{"name": field.name, "type": field.field_type} for field in table.schema]
+        
+        # Create a context message that describes the available data without being too prescriptive
+        context = f"""
+        IMPORTANT CONTEXT FOR ANSWERING QUERIES:
+        
+        You have access to a single table with transit/transportation information.
+        - Dataset: '{dataset_id}'
+        - Table: '{table_id}'
+        - Available columns: {columns}
+        
+        RULES YOU MUST FOLLOW:
+        1. ONLY use this specific table ({dataset_id}.{table_id}) in all queries
+        2. DO NOT attempt to access any other datasets, tables, or public data
+        3. All SQL queries must use the fully qualified name: `{dataset_id}.{table_id}`
+        4. When concepts like "routes" or "ridership" are mentioned, map them to appropriate columns
+           from the schema (for example, "ridership" might correspond to columns like passengers, 
+           total_passengers, boardings, etc.)
+        5. Use exact column names as they appear in the schema
+        
+        This is critical - using any other table will result in an error.
+        """
+        
+        return context, columns
+    except Exception as e:
+        return f"Error retrieving schema: {str(e)}", []
 
 st.set_page_config(
     page_title="SQL Talk with BigQuery",
@@ -193,8 +234,21 @@ with st.expander("Sample prompts", expanded=True):
         - How is inventory distributed across our regional distribution centers? Show as pie chart.
         - Do customers typically place more than one order?
         - Which product categories have the highest profit margins? Visualize with a pie chart.
+        - What routes have the most ridership? Show with a bar chart.
     """
     )
+
+# Get table schema at startup to display available columns
+schema_context, columns = enhance_model_context()
+with st.expander("Available Data Structure", expanded=False):
+    st.write(f"Dataset: {BIGQUERY_DATASET_ID}")
+    st.write(f"Table: {DEFAULT_TABLE_ID}")
+    if columns:
+        st.write("Available columns:")
+        for col in columns:
+            st.write(f"- {col['name']} ({col['type']})")
+    else:
+        st.warning("Unable to retrieve column information. Please check your BigQuery connection.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -247,20 +301,25 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             model=MODEL_ID,
             config=GenerateContentConfig(temperature=0, tools=[sql_query_tool]),
         )
-        client = bigquery.Client()
 
-        prompt += """
-            Please give a concise, high-level summary followed by detail in
-            plain language about where the information in your response is
-            coming from in the database. Only use information that you learn
-            from BigQuery, do not make up information. If the user's query mentions a visualization, 
-            chart, or specifically a pie chart , use the create_pie_chart function to generate a pie chart 
-            of the results or if specifically a bar chart , use the create_bar_chart function to generate a bar chart 
-            of the results.
-            """
+        # Enhance the prompt with schema context
+        schema_context, _ = enhance_model_context()
+        enhanced_prompt = f"""
+        {schema_context}
+        
+        USER QUERY: {prompt}
+        
+        Please give a concise, high-level summary followed by detail in
+        plain language about where the information in your response is
+        coming from in the database. Only use information that you learn
+        from BigQuery, do not make up information. If the user's query mentions a visualization, 
+        chart, or specifically a pie chart, use the create_pie_chart function to generate a pie chart 
+        of the results or if specifically a bar chart, use the create_bar_chart function to generate a bar chart 
+        of the results.
+        """
 
         try:
-            response = chat.send_message(prompt)
+            response = chat.send_message(enhanced_prompt)
             response = response.candidates[0].content.parts[0]
 
             print(response)
@@ -280,21 +339,21 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                     print(params)
 
                     if response.function_call.name == "list_datasets":
-                        api_response = client.list_datasets()
+                        api_response = bq_client.list_datasets()
                         api_response = BIGQUERY_DATASET_ID
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
 
                     if response.function_call.name == "list_tables":
-                        api_response = client.list_tables(params["dataset_id"])
+                        api_response = bq_client.list_tables(params["dataset_id"])
                         api_response = str([table.table_id for table in api_response])
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
 
                     if response.function_call.name == "get_table":
-                        api_response = client.get_table(params["table_id"])
+                        api_response = bq_client.get_table(params["table_id"])
                         api_response = api_response.to_api_repr()
                         api_requests_and_responses.append(
                             [
@@ -326,7 +385,19 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 .replace("\n", "")
                                 .replace("\\", "")
                             )
-                            query_job = client.query(
+                            
+                            # Ensure the query uses the correct dataset and table
+                            if f"`{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}`" not in cleaned_query:
+                                modified_query = cleaned_query.replace(
+                                    "FROM ", 
+                                    f"FROM `{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}` "
+                                )
+                                # Show warning if query was modified
+                                if modified_query != cleaned_query:
+                                    st.warning(f"Query was modified to use the correct table: {BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}")
+                                    cleaned_query = modified_query
+                            
+                            query_job = bq_client.query(
                                 cleaned_query, job_config=job_config
                             )
                             api_response = query_job.result()
@@ -369,7 +440,19 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 .replace("\n", "")
                                 .replace("\\", "")
                             )
-                            query_job = client.query(
+                            
+                            # Ensure the query uses the correct dataset and table
+                            if f"`{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}`" not in cleaned_query:
+                                modified_query = cleaned_query.replace(
+                                    "FROM ", 
+                                    f"FROM `{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}` "
+                                )
+                                # Show warning if query was modified
+                                if modified_query != cleaned_query:
+                                    st.warning(f"Query was modified to use the correct table: {BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}")
+                                    cleaned_query = modified_query
+                            
+                            query_job = bq_client.query(
                                 cleaned_query, job_config=job_config
                             )
                             query_results = query_job.result()
@@ -446,7 +529,19 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 .replace("\n", "")
                                 .replace("\\", "")
                             )
-                            query_job = client.query(
+                            
+                            # Ensure the query uses the correct dataset and table
+                            if f"`{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}`" not in cleaned_query:
+                                modified_query = cleaned_query.replace(
+                                    "FROM ", 
+                                    f"FROM `{BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}` "
+                                )
+                                # Show warning if query was modified
+                                if modified_query != cleaned_query:
+                                    st.warning(f"Query was modified to use the correct table: {BIGQUERY_DATASET_ID}.{DEFAULT_TABLE_ID}")
+                                    cleaned_query = modified_query
+                            
+                            query_job = bq_client.query(
                                 cleaned_query, job_config=job_config
                             )
                             query_results = query_job.result()
