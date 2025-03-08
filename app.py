@@ -106,6 +106,7 @@ create_pie_chart_func = FunctionDeclaration(
         ],
     },
 )
+
 create_bar_chart_func = FunctionDeclaration(
     name="create_bar_chart",
     description="Create a bar chart visualization based on query results",
@@ -355,12 +356,13 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                     "content": error_message,
                                 }
                             )
+
                     if response.function_call.name == "create_bar_chart":
                         job_config = bigquery.QueryJobConfig(
                             maximum_bytes_billed=100000000
                         )
                         try:
-                            # Run the query to get data for the pie chart
+                            # Run the query to get data for the bar chart
                             cleaned_query = (
                                 params["query"]
                                 .replace("\\n", " ")
@@ -375,18 +377,16 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                             # Convert to DataFrame
                             df = query_results.to_dataframe()
                             
-                            # Create the pie chart
+                            # Create the bar chart
                             fig, ax = plt.subplots(figsize=(10, 7))
-                            df.plot.pie(
+                            df.plot.bar(
+                                x=params["labels_column"],
                                 y=params["values_column"],
-                                labels=df[params["labels_column"]],
                                 ax=ax,
-                                autopct='%1.1f%%',
-                                startangle=90,
-                                shadow=False,
+                                rot=45,
+                                legend=False
                             )
                             ax.set_title(params["title"])
-                            ax.set_ylabel('')  # Hide y-label
                             
                             # Save chart to memory for display
                             buf = io.BytesIO()
@@ -434,90 +434,6 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 [response.function_call.name, params, api_response]
                             )
 
-                    print(api_response)
-
-                    response = chat.send_message(
-                        Part.from_function_response(
-                            name=response.function_call.name,
-                            response={
-                                "content": api_response,
-                            },
-                        ),
-                    )
-                    response = response.candidates[0].content.parts[0]
-
-                    backend_details += "- Function call:\n"
-                    backend_details += (
-                        "   - Function name: "
-                        + str(api_requests_and_responses[-1][0])
-                        + ""
-                    )
-                    backend_details += "\n\n"
-                    backend_details += (
-                        "   - Function parameters: "
-                        + str(api_requests_and_responses[-1][1])
-                        + ""
-                    )
-                    backend_details += "\n\n"
-                    backend_details += (
-                        "   - API response: "
-                        + str(api_requests_and_responses[-1][2])
-                        + ""
-                    )
-                    backend_details += "\n\n"
-                    with message_placeholder.container():
-                        st.markdown(backend_details)
-
-                except AttributeError:
-                    function_calling_in_process = False
-
-            time.sleep(3)
-
-            full_response = response.text
-            with message_placeholder.container():
-                st.markdown(full_response.replace("$", r"\$"))  # noqa: W605
-                
-                # Display pie chart if one was created
-                if chart_id and chart_id in st.session_state.bar_charts:
-                    chart_data = st.session_state.pie_charts[chart_id]
-                    st.image(chart_data["image"])
-                    st.download_button(
-                        label="Download Bar Chart",
-                        data=chart_data["image_bytes"],
-                        file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                        mime="image/png"
-                    )
-                
-                with st.expander("Function calls, parameters, and responses:"):
-                    st.markdown(backend_details)
-
-            message_data = {
-                "role": "assistant",
-                "content": full_response,
-                "backend_details": backend_details,
-            }
-            
-            # Add chart ID to message if one was created
-            if chart_id:
-                message_data["chart_id"] = chart_id
-                
-            st.session_state.messages.append(message_data)
-            
-        except Exception as e:
-            print(e)
-            error_message = f"""
-                Something went wrong! We encountered an unexpected error while
-                trying to process your request. Please try rephrasing your
-                question. Details:
-
-                {str(e)}"""
-            st.error(error_message)
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": error_message,
-                }
-            )
                     if response.function_call.name == "create_pie_chart":
                         job_config = bigquery.QueryJobConfig(
                             maximum_bytes_billed=100000000
@@ -651,6 +567,17 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                         mime="image/png"
                     )
                 
+                # Display bar chart if one was created
+                if chart_id and chart_id in st.session_state.bar_charts:
+                    chart_data = st.session_state.bar_charts[chart_id]
+                    st.image(chart_data["image"])
+                    st.download_button(
+                        label="Download Bar Chart",
+                        data=chart_data["image_bytes"],
+                        file_name=f"{chart_data['title'].replace(' ', '_')}.png",
+                        mime="image/png"
+                    )
+                
                 with st.expander("Function calls, parameters, and responses:"):
                     st.markdown(backend_details)
 
@@ -681,4 +608,3 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                     "content": error_message,
                 }
             )
-            
