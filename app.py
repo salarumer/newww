@@ -107,6 +107,114 @@ create_pie_chart_func = FunctionDeclaration(
     },
 )
 
+create_bar_chart_func = FunctionDeclaration(
+    name="create_bar_chart",
+    description="Create a bar chart visualization based on query results",
+    parameters={
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Title for the bar chart",
+            },
+            "x_column": {
+                "type": "string",
+                "description": "Column name to use for x-axis categories",
+            },
+            "y_column": {
+                "type": "string",
+                "description": "Column name to use for y-axis values",
+            },
+            "query": {
+                "type": "string",
+                "description": "SQL query that returns data suitable for a bar chart (typically two columns: one for categories and one for numeric values)",
+            },
+            "horizontal": {
+                "type": "boolean",
+                "description": "Whether to create a horizontal bar chart (true) or vertical bar chart (false)",
+                "default": False,
+            }
+        },
+        "required": [
+            "title",
+            "x_column",
+            "y_column",
+            "query",
+        ],
+    },
+)
+
+create_line_chart_func = FunctionDeclaration(
+    name="create_line_chart",
+    description="Create a line chart visualization based on query results",
+    parameters={
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Title for the line chart",
+            },
+            "x_column": {
+                "type": "string",
+                "description": "Column name to use for x-axis (typically time or sequential data)",
+            },
+            "y_columns": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Column names to use for y-axis values (can be multiple for multi-line charts)",
+            },
+            "query": {
+                "type": "string",
+                "description": "SQL query that returns data suitable for a line chart (typically date/time column and one or more numeric columns)",
+            }
+        },
+        "required": [
+            "title",
+            "x_column",
+            "y_columns",
+            "query",
+        ],
+    },
+)
+
+create_scatter_plot_func = FunctionDeclaration(
+    name="create_scatter_plot",
+    description="Create a scatter plot visualization based on query results",
+    parameters={
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Title for the scatter plot",
+            },
+            "x_column": {
+                "type": "string",
+                "description": "Column name to use for x-axis values",
+            },
+            "y_column": {
+                "type": "string",
+                "description": "Column name to use for y-axis values",
+            },
+            "query": {
+                "type": "string",
+                "description": "SQL query that returns data suitable for a scatter plot (typically two numeric columns)",
+            },
+            "color_column": {
+                "type": "string",
+                "description": "Optional column name to use for point colors to show categories",
+            }
+        },
+        "required": [
+            "title",
+            "x_column",
+            "y_column",
+            "query",
+        ],
+    },
+)
+
 sql_query_tool = Tool(
     function_declarations=[
         list_datasets_func,
@@ -114,6 +222,9 @@ sql_query_tool = Tool(
         get_table_func,
         sql_query_func,
         create_pie_chart_func,
+        create_bar_chart_func,
+        create_line_chart_func,
+        create_scatter_plot_func,
     ],
 )
 
@@ -160,25 +271,28 @@ with st.expander("Sample prompts", expanded=True):
         - How is inventory distributed across our regional distribution centers? Show as pie chart.
         - Do customers typically place more than one order?
         - Which product categories have the highest profit margins? Visualize with a pie chart.
+        - Show me monthly sales trends as a line chart.
+        - Compare product categories by revenue using a bar chart.
+        - Create a scatter plot of order value vs. customer age.
     """
     )
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "pie_charts" not in st.session_state:
-    st.session_state.pie_charts = {}
+if "charts" not in st.session_state:
+    st.session_state.charts = {}
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"].replace("$", r"\$"))  # noqa: W605
         
-        # Display pie chart if available
-        if "chart_id" in message and message["chart_id"] in st.session_state.pie_charts:
-            chart_data = st.session_state.pie_charts[message["chart_id"]]
+        # Display chart if available
+        if "chart_id" in message and message["chart_id"] in st.session_state.charts:
+            chart_data = st.session_state.charts[message["chart_id"]]
             st.image(chart_data["image"])
             st.download_button(
-                label="Download Pie Chart",
+                label=f"Download {chart_data['chart_type'].title()} Chart",
                 data=chart_data["image_bytes"],
                 file_name=f"{chart_data['title'].replace(' ', '_')}.png",
                 mime="image/png"
@@ -208,9 +322,15 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             Please give a concise, high-level summary followed by detail in
             plain language about where the information in your response is
             coming from in the database. Only use information that you learn
-            from BigQuery, do not make up information. If the user's query mentions a visualization, 
-            chart, or specifically a pie chart, use the create_pie_chart function to generate a pie chart 
-            of the results.
+            from BigQuery, do not make up information. 
+            
+            If the user's query mentions visualization or data exploration, choose the most appropriate chart type:
+            - Use pie charts for showing proportions and distribution (especially with categories)
+            - Use bar charts for comparing values across categories
+            - Use line charts for showing trends over time
+            - Use scatter plots for showing relationships between two numeric variables
+            
+            Based on the data and question, select the most appropriate visualization function.
             """
 
         try:
@@ -222,6 +342,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             api_requests_and_responses = []
             backend_details = ""
             chart_id = None
+            chart_type = None
 
             function_calling_in_process = True
             while function_calling_in_process:
@@ -311,6 +432,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 }
                             )
 
+                    # Create Pie Chart function
                     if response.function_call.name == "create_pie_chart":
                         job_config = bigquery.QueryJobConfig(
                             maximum_bytes_billed=100000000
@@ -353,19 +475,17 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                             img_src = f"data:image/png;base64,{img_b64}"
                             
                             # Generate a unique ID for this chart
-                            chart_id = f"chart_{len(st.session_state.pie_charts)}"
+                            chart_id = f"chart_{len(st.session_state.charts)}"
+                            chart_type = "pie chart"
                             
                             # Save chart data in session state
-                            st.session_state.pie_charts[chart_id] = {
+                            st.session_state.charts[chart_id] = {
                                 "image": img_src,
                                 "image_bytes": img_bytes,
                                 "title": params["title"],
-                                "data": df.to_dict()
+                                "data": df.to_dict(),
+                                "chart_type": chart_type
                             }
-                            
-                            # Display the chart
-                            chart_placeholder = st.empty()
-                            chart_placeholder.image(img_src)
                             
                             api_response = {
                                 "success": True,
@@ -380,6 +500,284 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                         except Exception as e:
                             error_message = f"""
                             We're having trouble creating the pie chart. This
+                            could be due to an invalid query or unsuitable data structure.
+                            Try rephrasing your question. Details:
+
+                            {str(e)}"""
+                            st.error(error_message)
+                            api_response = error_message
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+
+                    # Create Bar Chart function
+                    if response.function_call.name == "create_bar_chart":
+                        job_config = bigquery.QueryJobConfig(
+                            maximum_bytes_billed=100000000
+                        )
+                        try:
+                            # Run the query to get data for the bar chart
+                            cleaned_query = (
+                                params["query"]
+                                .replace("\\n", " ")
+                                .replace("\n", "")
+                                .replace("\\", "")
+                            )
+                            query_job = client.query(
+                                cleaned_query, job_config=job_config
+                            )
+                            query_results = query_job.result()
+                            
+                            # Convert to DataFrame
+                            df = query_results.to_dataframe()
+                            
+                            # Create the bar chart
+                            fig, ax = plt.subplots(figsize=(12, 8))
+                            
+                            # Check if horizontal bar chart is requested
+                            is_horizontal = params.get("horizontal", False)
+                            
+                            if is_horizontal:
+                                ax.barh(df[params["x_column"]], df[params["y_column"]])
+                                ax.set_xlabel(params["y_column"])
+                                ax.set_ylabel(params["x_column"])
+                            else:
+                                ax.bar(df[params["x_column"]], df[params["y_column"]])
+                                ax.set_xlabel(params["x_column"])
+                                ax.set_ylabel(params["y_column"])
+                            
+                            ax.set_title(params["title"])
+                            
+                            # Add data labels
+                            for i, v in enumerate(df[params["y_column"]]):
+                                if is_horizontal:
+                                    ax.text(v + max(df[params["y_column"]]) * 0.01, i, f"{v:,.2f}", 
+                                           va='center')
+                                else:
+                                    ax.text(i, v + max(df[params["y_column"]]) * 0.01, f"{v:,.2f}", 
+                                           ha='center')
+                            
+                            plt.xticks(rotation=45 if not is_horizontal else 0)
+                            plt.tight_layout()
+                            
+                            # Save chart to memory for display
+                            buf = io.BytesIO()
+                            fig.savefig(buf, format='png', bbox_inches='tight')
+                            buf.seek(0)
+                            img_bytes = buf.getvalue()
+                            img_b64 = base64.b64encode(img_bytes).decode()
+                            img_src = f"data:image/png;base64,{img_b64}"
+                            
+                            # Generate a unique ID for this chart
+                            chart_id = f"chart_{len(st.session_state.charts)}"
+                            chart_type = "bar chart"
+                            
+                            # Save chart data in session state
+                            st.session_state.charts[chart_id] = {
+                                "image": img_src,
+                                "image_bytes": img_bytes,
+                                "title": params["title"],
+                                "data": df.to_dict(),
+                                "chart_type": chart_type
+                            }
+                            
+                            api_response = {
+                                "success": True,
+                                "message": f"Created bar chart titled '{params['title']}' with {len(df)} data points.",
+                                "chart_id": chart_id
+                            }
+                            api_response = str(api_response)
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+                            
+                        except Exception as e:
+                            error_message = f"""
+                            We're having trouble creating the bar chart. This
+                            could be due to an invalid query or unsuitable data structure.
+                            Try rephrasing your question. Details:
+
+                            {str(e)}"""
+                            st.error(error_message)
+                            api_response = error_message
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+
+                    # Create Line Chart function
+                    if response.function_call.name == "create_line_chart":
+                        job_config = bigquery.QueryJobConfig(
+                            maximum_bytes_billed=100000000
+                        )
+                        try:
+                            # Run the query to get data for the line chart
+                            cleaned_query = (
+                                params["query"]
+                                .replace("\\n", " ")
+                                .replace("\n", "")
+                                .replace("\\", "")
+                            )
+                            query_job = client.query(
+                                cleaned_query, job_config=job_config
+                            )
+                            query_results = query_job.result()
+                            
+                            # Convert to DataFrame
+                            df = query_results.to_dataframe()
+                            
+                            # Create the line chart
+                            fig, ax = plt.subplots(figsize=(12, 8))
+                            
+                            # Get the y columns (could be multiple for multi-line chart)
+                            y_columns = params["y_columns"]
+                            if isinstance(y_columns, str):
+                                y_columns = [y_columns]
+                                
+                            # Plot each y column as a line
+                            for y_col in y_columns:
+                                ax.plot(df[params["x_column"]], df[y_col], marker='o', label=y_col)
+                            
+                            ax.set_xlabel(params["x_column"])
+                            ax.set_ylabel(", ".join(y_columns))
+                            ax.set_title(params["title"])
+                            
+                            # Add legend if there are multiple lines
+                            if len(y_columns) > 1:
+                                ax.legend()
+                                
+                            # Format x-axis if it looks like a date
+                            if df[params["x_column"]].dtype == 'datetime64[ns]':
+                                plt.gcf().autofmt_xdate()
+                                
+                            plt.grid(True, linestyle='--', alpha=0.7)
+                            plt.tight_layout()
+                            
+                            # Save chart to memory for display
+                            buf = io.BytesIO()
+                            fig.savefig(buf, format='png', bbox_inches='tight')
+                            buf.seek(0)
+                            img_bytes = buf.getvalue()
+                            img_b64 = base64.b64encode(img_bytes).decode()
+                            img_src = f"data:image/png;base64,{img_b64}"
+                            
+                            # Generate a unique ID for this chart
+                            chart_id = f"chart_{len(st.session_state.charts)}"
+                            chart_type = "line chart"
+                            
+                            # Save chart data in session state
+                            st.session_state.charts[chart_id] = {
+                                "image": img_src,
+                                "image_bytes": img_bytes,
+                                "title": params["title"],
+                                "data": df.to_dict(),
+                                "chart_type": chart_type
+                            }
+                            
+                            api_response = {
+                                "success": True,
+                                "message": f"Created line chart titled '{params['title']}' with {len(df)} data points.",
+                                "chart_id": chart_id
+                            }
+                            api_response = str(api_response)
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+                            
+                        except Exception as e:
+                            error_message = f"""
+                            We're having trouble creating the line chart. This
+                            could be due to an invalid query or unsuitable data structure.
+                            Try rephrasing your question. Details:
+
+                            {str(e)}"""
+                            st.error(error_message)
+                            api_response = error_message
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+
+                    # Create Scatter Plot function
+                    if response.function_call.name == "create_scatter_plot":
+                        job_config = bigquery.QueryJobConfig(
+                            maximum_bytes_billed=100000000
+                        )
+                        try:
+                            # Run the query to get data for the scatter plot
+                            cleaned_query = (
+                                params["query"]
+                                .replace("\\n", " ")
+                                .replace("\n", "")
+                                .replace("\\", "")
+                            )
+                            query_job = client.query(
+                                cleaned_query, job_config=job_config
+                            )
+                            query_results = query_job.result()
+                            
+                            # Convert to DataFrame
+                            df = query_results.to_dataframe()
+                            
+                            # Create the scatter plot
+                            fig, ax = plt.subplots(figsize=(12, 8))
+                            
+                            # Check if a color column is provided
+                            if "color_column" in params and params["color_column"]:
+                                # Create a colorful scatter plot by category
+                                categories = df[params["color_column"]].unique()
+                                for category in categories:
+                                    subset = df[df[params["color_column"]] == category]
+                                    ax.scatter(
+                                        subset[params["x_column"]], 
+                                        subset[params["y_column"]], 
+                                        label=category,
+                                        alpha=0.7
+                                    )
+                                ax.legend(title=params["color_column"])
+                            else:
+                                # Create a simple scatter plot
+                                ax.scatter(df[params["x_column"]], df[params["y_column"]], alpha=0.7)
+                            
+                            ax.set_xlabel(params["x_column"])
+                            ax.set_ylabel(params["y_column"])
+                            ax.set_title(params["title"])
+                            
+                            plt.grid(True, linestyle='--', alpha=0.5)
+                            plt.tight_layout()
+                            
+                            # Save chart to memory for display
+                            buf = io.BytesIO()
+                            fig.savefig(buf, format='png', bbox_inches='tight')
+                            buf.seek(0)
+                            img_bytes = buf.getvalue()
+                            img_b64 = base64.b64encode(img_bytes).decode()
+                            img_src = f"data:image/png;base64,{img_b64}"
+                            
+                            # Generate a unique ID for this chart
+                            chart_id = f"chart_{len(st.session_state.charts)}"
+                            chart_type = "scatter plot"
+                            
+                            # Save chart data in session state
+                            st.session_state.charts[chart_id] = {
+                                "image": img_src,
+                                "image_bytes": img_bytes,
+                                "title": params["title"],
+                                "data": df.to_dict(),
+                                "chart_type": chart_type
+                            }
+                            
+                            api_response = {
+                                "success": True,
+                                "message": f"Created scatter plot titled '{params['title']}' with {len(df)} data points.",
+                                "chart_id": chart_id
+                            }
+                            api_response = str(api_response)
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+                            
+                        except Exception as e:
+                            error_message = f"""
+                            We're having trouble creating the scatter plot. This
                             could be due to an invalid query or unsuitable data structure.
                             Try rephrasing your question. Details:
 
@@ -433,44 +831,9 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             with message_placeholder.container():
                 st.markdown(full_response.replace("$", r"\$"))  # noqa: W605
                 
-                # Display pie chart if one was created
-                if chart_id and chart_id in st.session_state.pie_charts:
-                    chart_data = st.session_state.pie_charts[chart_id]
+                # Display chart if one was created
+                if chart_id and chart_id in st.session_state.charts:
+                    chart_data = st.session_state.charts[chart_id]
                     st.image(chart_data["image"])
                     st.download_button(
-                        label="Download Pie Chart",
-                        data=chart_data["image_bytes"],
-                        file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                        mime="image/png"
-                    )
-                
-                with st.expander("Function calls, parameters, and responses:"):
-                    st.markdown(backend_details)
-
-            message_data = {
-                "role": "assistant",
-                "content": full_response,
-                "backend_details": backend_details,
-            }
-            
-            # Add chart ID to message if one was created
-            if chart_id:
-                message_data["chart_id"] = chart_id
-                
-            st.session_state.messages.append(message_data)
-            
-        except Exception as e:
-            print(e)
-            error_message = f"""
-                Something went wrong! We encountered an unexpected error while
-                trying to process your request. Please try rephrasing your
-                question. Details:
-
-                {str(e)}"""
-            st.error(error_message)
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": error_message,
-                }
-            )
+                        label=f"Download {chart_
