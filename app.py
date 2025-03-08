@@ -124,6 +124,17 @@ st.set_page_config(
     page_icon="vertex-ai.png",
     layout="wide",
 )
+# Set background color to white
+st.markdown(
+    """
+    <style>
+    body {
+        background-color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 col1, col2 = st.columns([8, 1])
 with col1:
