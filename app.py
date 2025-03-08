@@ -129,7 +129,11 @@ st.markdown(
     """
     <style>
     .stApp {
-        background-color: white !important;
+        background-color: white !important;  /* Pure white background */
+        color: black !important;  /* Black text */
+    }
+    .stMarkdown, .stTextInput, .stTextArea, .stButton {
+        color: black !important;
     }
     </style>
     """,
