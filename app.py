@@ -128,8 +128,8 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    body {
-        background-color: white;
+    .stApp {
+        background-color: white !important;
     }
     </style>
     """,
