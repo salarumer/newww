@@ -850,7 +850,10 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                             )
                 if chart_id in st.session_state.bar_charts:
                     chart_data = st.session_state.bar_charts[chart_id]
-                    with st.container(border=True, class_="plot-container"):
+                    with st.container():
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+    
+                        st.markdown('</div>', unsafe_allow_html=True)
                         # Display the interactive chart
                         if "plotly_fig" in chart_data:
                             st.plotly_chart(chart_data["plotly_fig"], use_container_width=True)
