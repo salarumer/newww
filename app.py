@@ -794,14 +794,105 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                 except AttributeError:
                     function_calling_in_process = False
 
-            time.sleep(3)
+            # Store the final response in session state
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response.text,
+                "backend_details": backend_details,
+                "chart_id": chart_id
+            })
 
-            full_response = response.text
-            with message_placeholder.container():
-                st.markdown(full_response.replace("$", r"\$"))  # noqa: W605
-                
-                # Display pie chart if one was created
-                if chart_id and chart_id in st.session_state.pie_charts:
+            # Display final response
+            message_placeholder.empty()
+            message_placeholder.markdown(response.text.replace("$", r"\$"))  # no
+# Display the chart if applicable
+            if chart_id is not None:
+                if chart_id in st.session_state.pie_charts:
                     chart_data = st.session_state.pie_charts[chart_id]
                     with st.container(border=True, class_="plot-container"):
-                        st.plotly_chart(chart_data
+                        # Display the interactive chart
+                        if "plotly_fig" in chart_data:
+                            st.plotly_chart(chart_data["plotly_fig"], use_container_width=True)
+                        else:
+                            st.image(chart_data["image"])
+                        
+                        # Create download options with dropdown
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        with col1:
+                            st.download_button(
+                                label="Download PNG",
+                                data=chart_data["image_bytes"],
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.png",
+                                mime="image/png"
+                            )
+                        with col2:
+                            # Convert PNG to JPG for download
+                            img = Image.open(io.BytesIO(chart_data["image_bytes"]))
+                            jpg_buf = io.BytesIO()
+                            img.convert('RGB').save(jpg_buf, format='JPEG')
+                            jpg_buf.seek(0)
+                            
+                            st.download_button(
+                                label="Download JPG",
+                                data=jpg_buf.getvalue(),
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.jpg",
+                                mime="image/jpeg"
+                            )
+                        with col3:
+                            # Create PDF with chart and data
+                            pdf_bytes = create_pdf(chart_data, "pie")
+                            
+                            st.download_button(
+                                label="Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.pdf",
+                                mime="application/pdf"
+                            )
+                if chart_id in st.session_state.bar_charts:
+                    chart_data = st.session_state.bar_charts[chart_id]
+                    with st.container(border=True, class_="plot-container"):
+                        # Display the interactive chart
+                        if "plotly_fig" in chart_data:
+                            st.plotly_chart(chart_data["plotly_fig"], use_container_width=True)
+                        else:
+                            st.image(chart_data["image"])
+                        
+                        # Create download options with dropdown
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        with col1:
+                            st.download_button(
+                                label="Download PNG",
+                                data=chart_data["image_bytes"],
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.png",
+                                mime="image/png"
+                            )
+                        with col2:
+                            # Convert PNG to JPG for download
+                            img = Image.open(io.BytesIO(chart_data["image_bytes"]))
+                            jpg_buf = io.BytesIO()
+                            img.convert('RGB').save(jpg_buf, format='JPEG')
+                            jpg_buf.seek(0)
+                            
+                            st.download_button(
+                                label="Download JPG",
+                                data=jpg_buf.getvalue(),
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.jpg",
+                                mime="image/jpeg"
+                            )
+                        with col3:
+                            # Create PDF with chart and data
+                            pdf_bytes = create_pdf(chart_data, "bar")
+                            
+                            st.download_button(
+                                label="Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"{chart_data['title'].replace(' ', '_')}.pdf",
+                                mime="application/pdf"
+                            )
+
+        except Exception as e:
+            error_message = f"Error: {str(e)}"
+            st.error(error_message)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": error_message}
+            )
