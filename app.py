@@ -2,6 +2,7 @@
 
 import time
 import json
+import ast
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -85,7 +86,7 @@ visualize_data_func = FunctionDeclaration(
         "properties": {
             "data": {
                 "type": "string",
-                "description": "JSON string of data to visualize"
+                "description": "JSON string of data to visualize or 'last_query_result' to use the last query results"
             },
             "chart_type": {
                 "type": "string",
@@ -183,7 +184,24 @@ def generate_visualization(data_str, chart_type, x_column, y_column, title, colo
     try:
         # Convert string representation of data to actual list of dictionaries
         if isinstance(data_str, str):
-            data = json.loads(data_str.replace("'", '"'))
+            # First try standard JSON parsing
+            try:
+                data = json.loads(data_str)
+            except json.JSONDecodeError:
+                # If that fails, try to clean the string and use ast.literal_eval
+                # Replace single quotes with double quotes for JSON compatibility
+                cleaned_str = data_str.replace("'", '"')
+                # Try to parse with json again
+                try:
+                    data = json.loads(cleaned_str)
+                except json.JSONDecodeError:
+                    # If still failing, use ast.literal_eval as a fallback
+                    try:
+                        data = ast.literal_eval(data_str)
+                    except (SyntaxError, ValueError):
+                        # If all parsing methods fail, return error
+                        st.error(f"Could not parse data string: {data_str[:100]}...")
+                        return None
         else:
             data = data_str
             
@@ -361,14 +379,26 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                         try:
                             # Parse parameters
                             chart_data = params.get("data")
+                            
+                            # Handle the case where "last_query_result" is passed
                             if chart_data == "last_query_result" and st.session_state.last_query_data:
                                 chart_data = st.session_state.last_query_data
-                                
+                            
+                            # If chart_data is a string and looks like a reference to last query
+                            elif chart_data and isinstance(chart_data, str) and ("last" in chart_data.lower() or "previous" in chart_data.lower() or "query" in chart_data.lower()) and st.session_state.last_query_data:
+                                chart_data = st.session_state.last_query_data
+                            
                             chart_type = params.get("chart_type")
                             x_column = params.get("x_column")
                             y_column = params.get("y_column")
                             title = params.get("title")
                             color_column = params.get("color_column", None)
+                            
+                            # Optional debugging information
+                            if st.session_state.get("debug_mode", False):
+                                st.write(f"Debug - Data type: {type(chart_data)}")
+                                if isinstance(chart_data, str):
+                                    st.write(f"Debug - Data string (first 100 chars): {chart_data[:100]}...")
                             
                             # Generate the chart
                             visualization = generate_visualization(
@@ -461,3 +491,17 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                     "content": error_message,
                 }
             )
+
+# Add a debug mode toggle in the sidebar
+with st.sidebar:
+    st.title("Settings")
+    debug_mode = st.checkbox("Enable Debug Mode", value=False)
+    if debug_mode:
+        st.session_state["debug_mode"] = True
+    else:
+        st.session_state["debug_mode"] = False
+    
+    if st.button("Clear Conversation"):
+        st.session_state.messages = []
+        st.session_state.last_query_data = None
+        st.experimental_rerun()
