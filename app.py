@@ -20,7 +20,7 @@ LOCATION = "us-central1"
 
 list_datasets_func = FunctionDeclaration(
     name="list_datasets",
-    description="Get a list of datasets that will help answer the user's question",
+    description="Get Only The dataset called dataset1 and no other datasets",
     parameters={
         "type": "object",
         "properties": {},
@@ -29,7 +29,7 @@ list_datasets_func = FunctionDeclaration(
 
 list_tables_func = FunctionDeclaration(
     name="list_tables",
-    description="List tables in a dataset that will help answer the user's question",
+    description="Only select the table called tansittable present in dataset1 and no other table",
     parameters={
         "type": "object",
         "properties": {
@@ -153,11 +153,8 @@ st.markdown(
 with st.expander("Sample prompts", expanded=True):
     st.write(
         """
-        - What kind of information is in this database?
-        - What percentage of orders are returned? Show me a pie chart.
-        - How is inventory distributed across our regional distribution centers? Visualize as a bar chart.
-        - Do customers typically place more than one order? Show the distribution.
-        - Which product categories have the highest profit margins? Create a visualization.
+        - Give Me Percentage for Punctuality Categories
+        - Which Routes have the highest ridership
     """
     )
 
@@ -270,7 +267,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
         client = bigquery.Client()
 
         enhanced_prompt = prompt + """
-            I want the response to be complete and don't miss anything about what is asked. Only use information from BigQuery, and do not make up any data.
+            I want the response to be complete and don't miss anything about what is asked. Only use information from BigQuery, and do not make up any data.Also Only use dataset called dataset1 and table called tansittable from the dataset1.
             If the user asks for visualization or chart, first query the data and then call the visualize_data function to generate the appropriate visualization.
             Choose the most appropriate chart type for the data and question being asked.
             """
