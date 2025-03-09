@@ -1,15 +1,11 @@
 # pylint: disable=broad-exception-caught,invalid-name
 
 import time
-import io
-import base64
-import matplotlib.pyplot as plt
 
 from google import genai
 from google.cloud import bigquery
 from google.genai.types import FunctionDeclaration, GenerateContentConfig, Part, Tool
 import streamlit as st
-import pandas as pd
 
 BIGQUERY_DATASET_ID = "dataset1"
 MODEL_ID = "gemini-1.5-pro"
@@ -75,78 +71,12 @@ sql_query_func = FunctionDeclaration(
     },
 )
 
-create_pie_chart_func = FunctionDeclaration(
-    name="create_pie_chart",
-    description="Create a pie chart visualization based on query results",
-    parameters={
-        "type": "object",
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "Title for the pie chart",
-            },
-            "labels_column": {
-                "type": "string",
-                "description": "Column name to use for pie chart labels",
-            },
-            "values_column": {
-                "type": "string",
-                "description": "Column name to use for pie chart values",
-            },
-            "query": {
-                "type": "string",
-                "description": "SQL query that returns data suitable for a pie chart (typically two columns: one for categories/labels and one for numeric values)",
-            }
-        },
-        "required": [
-            "title",
-            "labels_column",
-            "values_column",
-            "query",
-        ],
-    },
-)
-
-create_bar_chart_func = FunctionDeclaration(
-    name="create_bar_chart",
-    description="Create a bar chart visualization based on query results",
-    parameters={
-        "type": "object",
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "Title for the bar chart",
-            },
-            "labels_column": {
-                "type": "string",
-                "description": "Column name to use for bar chart labels",
-            },
-            "values_column": {
-                "type": "string",
-                "description": "Column name to use for bar chart values",
-            },
-            "query": {
-                "type": "string",
-                "description": "SQL query that returns data suitable for a bar chart (typically two columns: one for categories/labels and one for numeric values)",
-            }
-        },
-        "required": [
-            "title",
-            "labels_column",
-            "values_column",
-            "query",
-        ],
-    },
-)
-
 sql_query_tool = Tool(
     function_declarations=[
         list_datasets_func,
         list_tables_func,
         get_table_func,
         sql_query_func,
-        create_pie_chart_func,
-        create_bar_chart_func,
     ],
 )
 
@@ -156,21 +86,6 @@ st.set_page_config(
     page_title="SQL Talk with BigQuery",
     page_icon="vertex-ai.png",
     layout="wide",
-)
-# Set background color to white
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-color: white !important;  /* Pure white background */
-        color: black !important;  /* Black text */
-    }
-    .stMarkdown, .stTextInput, .stTextArea, .stButton {
-        color: black !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
 )
 
 col1, col2 = st.columns([8, 1])
@@ -190,45 +105,18 @@ with st.expander("Sample prompts", expanded=True):
         """
         - What kind of information is in this database?
         - What percentage of orders are returned?
-        - How is inventory distributed across our regional distribution centers? Show as pie chart.
+        - How is inventory distributed across our regional distribution centers?
         - Do customers typically place more than one order?
-        - Which product categories have the highest profit margins? Visualize with a pie chart.
+        - Which product categories have the highest profit margins?
     """
     )
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "pie_charts" not in st.session_state:
-    st.session_state.pie_charts = {}
-
-if "bar_charts" not in st.session_state:
-    st.session_state.bar_charts = {}
-
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"].replace("$", r"\$"))  # noqa: W605
-        
-        # Display pie chart if available
-        if "chart_id" in message and message["chart_id"] in st.session_state.pie_charts:
-            chart_data = st.session_state.pie_charts[message["chart_id"]]
-            st.image(chart_data["image"])
-            st.download_button(
-                label="Download Pie Chart",
-                data=chart_data["image_bytes"],
-                file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                mime="image/png"
-            )
-        if "chart_id" in message and message["chart_id"] in st.session_state.bar_charts:
-            chart_data = st.session_state.bar_charts[message["chart_id"]]
-            st.image(chart_data["image"])
-            st.download_button(
-                label="Download Bar Chart",
-                data=chart_data["image_bytes"],
-                file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                mime="image/png"
-            )
-            
         try:
             with st.expander("Function calls, parameters, and responses"):
                 st.markdown(message["backend_details"])
@@ -250,13 +138,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
         client = bigquery.Client()
 
         prompt += """
-            Please give a concise, high-level summary followed by detail in
-            plain language about where the information in your response is
-            coming from in the database. Only use information that you learn
-            from BigQuery, do not make up information. If the user's query mentions a visualization, 
-            chart, or specifically a pie chart , use the create_pie_chart function to generate a pie chart 
-            of the results or if specifically a bar chart , use the create_bar_chart function to generate a bar chart 
-            of the results.
+            I want the response to be complete and dont miss anything about what is asked and Only use information from BigQuery, and do not make up any data.
             """
 
         try:
@@ -267,7 +149,6 @@ if prompt := st.chat_input("Ask me about information in the database..."):
 
             api_requests_and_responses = []
             backend_details = ""
-            chart_id = None
 
             function_calling_in_process = True
             while function_calling_in_process:
@@ -357,162 +238,6 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 }
                             )
 
-                    if response.function_call.name == "create_bar_chart":
-                        job_config = bigquery.QueryJobConfig(
-                            maximum_bytes_billed=100000000
-                        )
-                        try:
-                            # Run the query to get data for the bar chart
-                            cleaned_query = (
-                                params["query"]
-                                .replace("\\n", " ")
-                                .replace("\n", "")
-                                .replace("\\", "")
-                            )
-                            query_job = client.query(
-                                cleaned_query, job_config=job_config
-                            )
-                            query_results = query_job.result()
-                            
-                            # Convert to DataFrame
-                            df = query_results.to_dataframe()
-                            
-                            # Create the bar chart
-                            fig, ax = plt.subplots(figsize=(10, 7))
-                            df.plot.bar(
-                                x=params["labels_column"],
-                                y=params["values_column"],
-                                ax=ax,
-                                rot=45,
-                                legend=False
-                            )
-                            ax.set_title(params["title"])
-                            
-                            # Save chart to memory for display
-                            buf = io.BytesIO()
-                            fig.savefig(buf, format='png', bbox_inches='tight')
-                            buf.seek(0)
-                            img_bytes = buf.getvalue()
-                            img_b64 = base64.b64encode(img_bytes).decode()
-                            img_src = f"data:image/png;base64,{img_b64}"
-                            
-                            # Generate a unique ID for this chart
-                            chart_id = f"chart_{len(st.session_state.bar_charts)}"
-                            
-                            # Save chart data in session state
-                            st.session_state.bar_charts[chart_id] = {
-                                "image": img_src,
-                                "image_bytes": img_bytes,
-                                "title": params["title"],
-                                "data": df.to_dict()
-                            }
-                            
-                            # Display the chart
-                            chart_placeholder = st.empty()
-                            chart_placeholder.image(img_src)
-                            
-                            api_response = {
-                                "success": True,
-                                "message": f"Created bar chart titled '{params['title']}' with {len(df)} data points.",
-                                "chart_id": chart_id
-                            }
-                            api_response = str(api_response)
-                            api_requests_and_responses.append(
-                                [response.function_call.name, params, api_response]
-                            )
-                            
-                        except Exception as e:
-                            error_message = f"""
-                            We're having trouble creating the bar chart. This
-                            could be due to an invalid query or unsuitable data structure.
-                            Try rephrasing your question. Details:
-
-                            {str(e)}"""
-                            st.error(error_message)
-                            api_response = error_message
-                            api_requests_and_responses.append(
-                                [response.function_call.name, params, api_response]
-                            )
-
-                    if response.function_call.name == "create_pie_chart":
-                        job_config = bigquery.QueryJobConfig(
-                            maximum_bytes_billed=100000000
-                        )
-                        try:
-                            # Run the query to get data for the pie chart
-                            cleaned_query = (
-                                params["query"]
-                                .replace("\\n", " ")
-                                .replace("\n", "")
-                                .replace("\\", "")
-                            )
-                            query_job = client.query(
-                                cleaned_query, job_config=job_config
-                            )
-                            query_results = query_job.result()
-                            
-                            # Convert to DataFrame
-                            df = query_results.to_dataframe()
-                            
-                            # Create the pie chart
-                            fig, ax = plt.subplots(figsize=(10, 7))
-                            df.plot.pie(
-                                y=params["values_column"],
-                                labels=df[params["labels_column"]],
-                                ax=ax,
-                                autopct='%1.1f%%',
-                                startangle=90,
-                                shadow=False,
-                            )
-                            ax.set_title(params["title"])
-                            ax.set_ylabel('')  # Hide y-label
-                            
-                            # Save chart to memory for display
-                            buf = io.BytesIO()
-                            fig.savefig(buf, format='png', bbox_inches='tight')
-                            buf.seek(0)
-                            img_bytes = buf.getvalue()
-                            img_b64 = base64.b64encode(img_bytes).decode()
-                            img_src = f"data:image/png;base64,{img_b64}"
-                            
-                            # Generate a unique ID for this chart
-                            chart_id = f"chart_{len(st.session_state.pie_charts)}"
-                            
-                            # Save chart data in session state
-                            st.session_state.pie_charts[chart_id] = {
-                                "image": img_src,
-                                "image_bytes": img_bytes,
-                                "title": params["title"],
-                                "data": df.to_dict()
-                            }
-                            
-                            # Display the chart
-                            chart_placeholder = st.empty()
-                            chart_placeholder.image(img_src)
-                            
-                            api_response = {
-                                "success": True,
-                                "message": f"Created pie chart titled '{params['title']}' with {len(df)} data points.",
-                                "chart_id": chart_id
-                            }
-                            api_response = str(api_response)
-                            api_requests_and_responses.append(
-                                [response.function_call.name, params, api_response]
-                            )
-                            
-                        except Exception as e:
-                            error_message = f"""
-                            We're having trouble creating the pie chart. This
-                            could be due to an invalid query or unsuitable data structure.
-                            Try rephrasing your question. Details:
-
-                            {str(e)}"""
-                            st.error(error_message)
-                            api_response = error_message
-                            api_requests_and_responses.append(
-                                [response.function_call.name, params, api_response]
-                            )
-
                     print(api_response)
 
                     response = chat.send_message(
@@ -527,21 +252,21 @@ if prompt := st.chat_input("Ask me about information in the database..."):
 
                     backend_details += "- Function call:\n"
                     backend_details += (
-                        "   - Function name: "
+                        "   - Function name: ```"
                         + str(api_requests_and_responses[-1][0])
-                        + ""
+                        + "```"
                     )
                     backend_details += "\n\n"
                     backend_details += (
-                        "   - Function parameters: "
+                        "   - Function parameters: ```"
                         + str(api_requests_and_responses[-1][1])
-                        + ""
+                        + "```"
                     )
                     backend_details += "\n\n"
                     backend_details += (
-                        "   - API response: "
+                        "   - API response: ```"
                         + str(api_requests_and_responses[-1][2])
-                        + ""
+                        + "```"
                     )
                     backend_details += "\n\n"
                     with message_placeholder.container():
@@ -555,44 +280,16 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             full_response = response.text
             with message_placeholder.container():
                 st.markdown(full_response.replace("$", r"\$"))  # noqa: W605
-                
-                # Display pie chart if one was created
-                if chart_id and chart_id in st.session_state.pie_charts:
-                    chart_data = st.session_state.pie_charts[chart_id]
-                    st.image(chart_data["image"])
-                    st.download_button(
-                        label="Download Pie Chart",
-                        data=chart_data["image_bytes"],
-                        file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                        mime="image/png"
-                    )
-                
-                # Display bar chart if one was created
-                if chart_id and chart_id in st.session_state.bar_charts:
-                    chart_data = st.session_state.bar_charts[chart_id]
-                    st.image(chart_data["image"])
-                    st.download_button(
-                        label="Download Bar Chart",
-                        data=chart_data["image_bytes"],
-                        file_name=f"{chart_data['title'].replace(' ', '_')}.png",
-                        mime="image/png"
-                    )
-                
                 with st.expander("Function calls, parameters, and responses:"):
                     st.markdown(backend_details)
 
-            message_data = {
-                "role": "assistant",
-                "content": full_response,
-                "backend_details": backend_details,
-            }
-            
-            # Add chart ID to message if one was created
-            if chart_id:
-                message_data["chart_id"] = chart_id
-                
-            st.session_state.messages.append(message_data)
-            
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": full_response,
+                    "backend_details": backend_details,
+                }
+            )
         except Exception as e:
             print(e)
             error_message = f"""
