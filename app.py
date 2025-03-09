@@ -1,11 +1,17 @@
 # pylint: disable=broad-exception-caught,invalid-name
 
 import time
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
 from google import genai
 from google.cloud import bigquery
 from google.genai.types import FunctionDeclaration, GenerateContentConfig, Part, Tool
-import streamlit as st
 
 BIGQUERY_DATASET_ID = "dataset1"
 MODEL_ID = "gemini-1.5-pro"
@@ -71,12 +77,55 @@ sql_query_func = FunctionDeclaration(
     },
 )
 
+visualize_data_func = FunctionDeclaration(
+    name="visualize_data",
+    description="Generate a visualization of the data provided to answer the user's question",
+    parameters={
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "string",
+                "description": "JSON string of data to visualize"
+            },
+            "chart_type": {
+                "type": "string",
+                "description": "Type of chart to generate (bar, line, pie, scatter, heatmap)",
+                "enum": ["bar", "line", "pie", "scatter", "heatmap"]
+            },
+            "x_column": {
+                "type": "string",
+                "description": "Column to use for x-axis"
+            },
+            "y_column": {
+                "type": "string",
+                "description": "Column to use for y-axis (or value for pie charts)"
+            },
+            "title": {
+                "type": "string",
+                "description": "Title for the visualization"
+            },
+            "color_column": {
+                "type": "string",
+                "description": "Column to use for color grouping (optional)",
+            }
+        },
+        "required": [
+            "data",
+            "chart_type",
+            "x_column",
+            "y_column",
+            "title"
+        ],
+    },
+)
+
 sql_query_tool = Tool(
     function_declarations=[
         list_datasets_func,
         list_tables_func,
         get_table_func,
         sql_query_func,
+        visualize_data_func,
     ],
 )
 
@@ -90,7 +139,7 @@ st.set_page_config(
 
 col1, col2 = st.columns([8, 1])
 with col1:
-    st.title("SQL Talk with BigQuery")
+    st.title("SQL Talk with BigQuery & Visualization")
 with col2:
     st.image("vertex-ai.png")
 
@@ -104,24 +153,87 @@ with st.expander("Sample prompts", expanded=True):
     st.write(
         """
         - What kind of information is in this database?
-        - What percentage of orders are returned?
-        - How is inventory distributed across our regional distribution centers?
-        - Do customers typically place more than one order?
-        - Which product categories have the highest profit margins?
+        - What percentage of orders are returned? Show me a pie chart.
+        - How is inventory distributed across our regional distribution centers? Visualize as a bar chart.
+        - Do customers typically place more than one order? Show the distribution.
+        - Which product categories have the highest profit margins? Create a visualization.
     """
     )
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "last_query_data" not in st.session_state:
+    st.session_state.last_query_data = None
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"].replace("$", r"\$"))  # noqa: W605
         try:
+            if "visualization" in message and message["visualization"] is not None:
+                st.plotly_chart(message["visualization"], use_container_width=True)
+        except KeyError:
+            pass
+        try:
             with st.expander("Function calls, parameters, and responses"):
                 st.markdown(message["backend_details"])
         except KeyError:
             pass
+
+def generate_visualization(data_str, chart_type, x_column, y_column, title, color_column=None):
+    try:
+        # Convert string representation of data to actual list of dictionaries
+        if isinstance(data_str, str):
+            data = json.loads(data_str.replace("'", '"'))
+        else:
+            data = data_str
+            
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Create the appropriate chart based on the type
+        if chart_type == "bar":
+            if color_column and color_column in df.columns:
+                fig = px.bar(df, x=x_column, y=y_column, color=color_column, title=title)
+            else:
+                fig = px.bar(df, x=x_column, y=y_column, title=title)
+                
+        elif chart_type == "line":
+            if color_column and color_column in df.columns:
+                fig = px.line(df, x=x_column, y=y_column, color=color_column, title=title)
+            else:
+                fig = px.line(df, x=x_column, y=y_column, title=title)
+                
+        elif chart_type == "pie":
+            fig = px.pie(df, names=x_column, values=y_column, title=title)
+            
+        elif chart_type == "scatter":
+            if color_column and color_column in df.columns:
+                fig = px.scatter(df, x=x_column, y=y_column, color=color_column, title=title)
+            else:
+                fig = px.scatter(df, x=x_column, y=y_column, title=title)
+                
+        elif chart_type == "heatmap":
+            # Pivot the data for heatmap if necessary
+            pivot_df = df.pivot(index=x_column, columns=color_column, values=y_column) if color_column else df
+            fig = px.imshow(pivot_df, title=title)
+        else:
+            return None
+            
+        # Add styling
+        fig.update_layout(
+            template="plotly_white",
+            title={
+                'y':0.95,
+                'x':0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'
+            }
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"Error generating visualization: {str(e)}")
+        return None
 
 if prompt := st.chat_input("Ask me about information in the database..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -131,24 +243,29 @@ if prompt := st.chat_input("Ask me about information in the database..."):
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
+        visualization = None
+        
         chat = client.chats.create(
             model=MODEL_ID,
             config=GenerateContentConfig(temperature=0, tools=[sql_query_tool]),
         )
         client = bigquery.Client()
 
-        prompt += """
-            I want the response to be complete and dont miss anything about what is asked and Only use information from BigQuery, and do not make up any data.
+        enhanced_prompt = prompt + """
+            I want the response to be complete and don't miss anything about what is asked. Only use information from BigQuery, and do not make up any data.
+            If the user asks for visualization or chart, first query the data and then call the visualize_data function to generate the appropriate visualization.
+            Choose the most appropriate chart type for the data and question being asked.
             """
 
         try:
-            response = chat.send_message(prompt)
+            response = chat.send_message(enhanced_prompt)
             response = response.candidates[0].content.parts[0]
 
             print(response)
 
             api_requests_and_responses = []
             backend_details = ""
+            query_result = None
 
             function_calling_in_process = True
             while function_calling_in_process:
@@ -211,7 +328,9 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                 cleaned_query, job_config=job_config
                             )
                             api_response = query_job.result()
-                            api_response = str([dict(row) for row in api_response])
+                            query_result = [dict(row) for row in api_response]
+                            st.session_state.last_query_data = query_result
+                            api_response = str(query_result)
                             api_response = api_response.replace("\\", "").replace(
                                 "\n", ""
                             )
@@ -236,6 +355,40 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                     "role": "assistant",
                                     "content": error_message,
                                 }
+                            )
+                            
+                    if response.function_call.name == "visualize_data":
+                        try:
+                            # Parse parameters
+                            chart_data = params.get("data")
+                            if chart_data == "last_query_result" and st.session_state.last_query_data:
+                                chart_data = st.session_state.last_query_data
+                                
+                            chart_type = params.get("chart_type")
+                            x_column = params.get("x_column")
+                            y_column = params.get("y_column")
+                            title = params.get("title")
+                            color_column = params.get("color_column", None)
+                            
+                            # Generate the chart
+                            visualization = generate_visualization(
+                                chart_data, chart_type, x_column, y_column, title, color_column
+                            )
+                            
+                            if visualization:
+                                api_response = "Visualization successfully created."
+                            else:
+                                api_response = "Failed to create visualization."
+                                
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
+                            )
+                        except Exception as e:
+                            error_message = f"Error generating visualization: {str(e)}"
+                            st.error(error_message)
+                            api_response = error_message
+                            api_requests_and_responses.append(
+                                [response.function_call.name, params, api_response]
                             )
 
                     print(api_response)
@@ -280,6 +433,8 @@ if prompt := st.chat_input("Ask me about information in the database..."):
             full_response = response.text
             with message_placeholder.container():
                 st.markdown(full_response.replace("$", r"\$"))  # noqa: W605
+                if visualization:
+                    st.plotly_chart(visualization, use_container_width=True)
                 with st.expander("Function calls, parameters, and responses:"):
                     st.markdown(backend_details)
 
@@ -288,6 +443,7 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                     "role": "assistant",
                     "content": full_response,
                     "backend_details": backend_details,
+                    "visualization": visualization
                 }
             )
         except Exception as e:
