@@ -77,6 +77,28 @@ sql_query_func = FunctionDeclaration(
         ],
     },
 )
+calculate_utilization_rate_func = FunctionDeclaration(
+    name="calculate_utilization_rate",
+    description="Calculate the Vehicle Utilization Rate as a percentage by dividing operated kilometers by planned kilometers",
+    parameters={
+        "type": "object",
+        "properties": {
+            "operated_km": {
+                "type": "number",
+                "description": "The actual kilometers operated by vehicles",
+            },
+            "planned_km": {
+                "type": "number",
+                "description": "The planned kilometers that vehicles should have operated",
+            }
+        },
+        "required": [
+            "operated_km",
+            "planned_km",
+        ],
+    },
+)
+
 
 visualize_data_func = FunctionDeclaration(
     name="visualize_data",
@@ -126,6 +148,7 @@ sql_query_tool = Tool(
         list_tables_func,
         get_table_func,
         sql_query_func,
+        calculate_utilization_rate_func,
         visualize_data_func,
     ],
 )
@@ -374,6 +397,20 @@ if prompt := st.chat_input("Ask me about information in the database..."):
                                     "content": error_message,
                                 }
                             )
+                    if response.function_call.name == "calculate_utilization_rate":
+                        operated_km = float(params["operated_km"])
+                        planned_km = float(params["planned_km"])
+                        
+                        # Avoid division by zero
+                        if planned_km == 0:
+                            utilization_rate = 0
+                        else:
+                            utilization_rate = (operated_km / planned_km) * 100
+                        
+                        api_response = f"{utilization_rate:.2f}%"
+                        api_requests_and_responses.append(
+                            [response.function_call.name, params, api_response]
+                        )
                             
                     if response.function_call.name == "visualize_data":
                         try:
