@@ -1,4 +1,3 @@
-# pylint: disable=broad-exception-caught,invalid-name
 import time
 import json
 import ast
@@ -9,6 +8,9 @@ import streamlit as st
 from google import genai
 from google.cloud import bigquery
 from google.genai.types import FunctionDeclaration, GenerateContentConfig, Part, Tool
+
+# Set the page configuration
+st.set_page_config(page_title="Transit Performance Dashboard", layout="wide")
 
 st.markdown(
     """
@@ -44,15 +46,94 @@ st.markdown(
         background-color: white !important;
         color: black !important;
     }
+    
+    /* Style for recommended prompts */
+    .prompt-card {
+        background-color: #f8f9fa;
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin: 5px 0;
+        cursor: pointer;
+        transition: background-color 0.3s;
+        border: 1px solid #ddd;
+    }
+    
+    .prompt-card:hover {
+        background-color: #e2e6ea;
+        border-color: #adb5bd;
+    }
+    
+    .prompt-category {
+        font-weight: bold;
+        margin-bottom: 8px;
+        color: #495057;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+# Create categories of prompts
+prompt_categories = {
+    "Basic Information": [
+        "What performance metrics are available in the dashboard?",
+        "Show me the most recent transit data",
+        "How many routes are currently active in the system?"
+    ],
+    "Route Performance": [
+        "Which route has the highest seat occupancy in the last month?",
+        "Compare the performance of Route 101 and Route 202",
+        "Show me the routes with the lowest farebox recovery ratio"
+    ],
+    "Monthly Analysis": [
+        "Generate a monthly summary for March 2025",
+        "How does this month's performance compare to last month?",
+        "What was the seat occupancy trend over the past 3 months?"
+    ],
+    "Financial & Operations": [
+        "What's our current farebox recovery ratio?",
+        "Calculate the revenue per kilometer for Route 101",
+        "What's our overall lost kilometer rate this month?"
+    ]
+}
 
+# Initialize prompt_value in session state if it doesn't exist
+if "prompt_value" not in st.session_state:
+    st.session_state.prompt_value = ""
 
+# Display prompts with clickable functionality
+with st.expander("Click to see recommended questions"):
+    for category, prompts in prompt_categories.items():
+        st.markdown(f"<div class='prompt-category'>{category}</div>", unsafe_allow_html=True)
+        
+        # Create columns for the prompts
+        cols = st.columns(1)
+        
+        for prompt in prompts:
+            # Use Streamlit's button with the prompt text
+            if cols[0].button(prompt, key=f"btn_{category}_{prompt}"):
+                # Store the prompt in session state
+                st.session_state.prompt_value = prompt
+                
+                # Force a rerun of the app to apply the session state value
+                st.rerun()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
+# Get the chat input (no value parameter)
+prompt = st.chat_input("Ask me about information in the database...")
+
+# If we have a stored prompt value and no user input yet, use the stored value
+if not prompt and st.session_state.prompt_value:
+    prompt = st.session_state.prompt_value
+    # Clear the stored prompt_value to prevent reuse on next rerun
+    st.session_state.prompt_value = ""
+
+# Display a header
+st.title("🚌 Transit Performance Dashboard")
+st.markdown("Ask questions about transit performance or select from recommended queries below.")
 
 BIGQUERY_DATASET_ID = "dataset1"
-MODEL_ID = "gemini-1.5-pro"
+MODEL_ID = "gemini-2.0-flash"
 LOCATION = "us-central1"
 COST_PER_KM = 2.4  # Fixed cost per km in AED
 
@@ -385,7 +466,7 @@ for message in st.session_state.messages:
                 st.markdown(message["backend_details"])
         except KeyError:
             pass
-if prompt := st.chat_input("Ask me about information in the database..."):
+if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
