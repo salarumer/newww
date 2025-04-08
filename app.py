@@ -76,7 +76,7 @@ st.markdown(
 prompt_categories = {
     "Basic Information": [
         "What performance metrics are available in the dashboard?",
-        "Show me the most recent transit data",
+        "Give Me Percentages For All Punctuality Categories",
         "How many routes are currently active in the system?"
     ],
     "Route Performance": [
@@ -85,7 +85,7 @@ prompt_categories = {
         "Show me the routes with the lowest farebox recovery ratio"
     ],
     "Monthly Analysis": [
-        "Generate a monthly summary for March 2025",
+        "Generate a monthly summary for April 2023",
         "How does this month's performance compare to last month?",
         "What was the seat occupancy trend over the past 3 months?"
     ],
@@ -199,150 +199,185 @@ sql_query_func = FunctionDeclaration(
 
 calculate_seat_occupancy_func = FunctionDeclaration(
     name="calculate_seat_occupancy",
-    description="Calculate the Seat Occupancy Rate as a percentage based on total passengers and available seats.",
+    description="Calculate the Seat Occupancy Rate as a percentage based on total passengers and available seats. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "total_passengers": {
                 "type": "integer",
-                "description": "Total number of passengers on the vehicle."
+                "description": "Total number of passengers on the vehicle. If omitted, will fetch from database."
             },
             "total_available_seats": {
                 "type": "integer",
-                "description": "Total number of available seats in the vehicle."
+                "description": "Total number of available seats in the vehicle. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate occupancy for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "total_passengers",
-            "total_available_seats",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 service_reliability_func = FunctionDeclaration(
     name="calculate_service_reliability",
-    description="Calculate the Service Reliability as a percentage based on operated kilometers and lost kilometers.",
+    description="Calculate the Service Reliability as a percentage based on operated kilometers and lost kilometers. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "operated_km": {
                 "type": "number",
-                "description": "Total kilometers actually operated by the vehicle."
+                "description": "Total kilometers actually operated by the vehicle. If omitted, will fetch from database."
             },
             "lost_km": {
                 "type": "number",
-                "description": "Total kilometers lost or not operated as planned."
+                "description": "Total kilometers lost or not operated as planned. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate reliability for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "operated_km",
-            "lost_km",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 
 lost_km_rate_func = FunctionDeclaration(
     name="calculate_lost_km_rate",
-    description="Calculate the Lost Kilometer Rate as a percentage based on lost kilometers and planned kilometers.",
+    description="Calculate the Lost Kilometer Rate as a percentage based on lost kilometers and planned kilometers. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "lost_km": {
                 "type": "number",
-                "description": "Total kilometers lost or not operated as planned."
+                "description": "Total kilometers lost or not operated as planned. If omitted, will fetch from database."
             },
             "planned_km": {
                 "type": "number",
-                "description": "Total kilometers planned to be operated."
+                "description": "Total kilometers planned to be operated. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate lost km rate for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "lost_km",
-            "planned_km",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 service_utilization_rate_func = FunctionDeclaration(
     name="calculate_service_utilization_rate",
-    description="Calculate the Service Utilization Rate as a percentage based on operated seat-kilometers and planned seat-kilometers.",
+    description="Calculate the Service Utilization Rate as a percentage based on operated seat-kilometers and planned seat-kilometers. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "operated_seats_km": {
                 "type": "number",
-                "description": "Total seat-kilometers operated (seats × kilometers)."
+                "description": "Total seat-kilometers operated (seats × kilometers). If omitted, will fetch from database."
             },
             "planned_seats_km": {
                 "type": "number",
-                "description": "Total seat-kilometers planned (seats × kilometers)."
+                "description": "Total seat-kilometers planned (seats × kilometers). If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate utilization rate for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "operated_seats_km",
-            "planned_seats_km",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 route_efficiency_func = FunctionDeclaration(
     name="calculate_route_efficiency",
-    description="Calculate the Route Efficiency Ratio as a percentage based on operated kilometers and planned kilometers.",
+    description="Calculate the Route Efficiency Ratio as a percentage based on operated kilometers and planned kilometers. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "operated_km": {
                 "type": "number",
-                "description": "Total kilometers actually operated by the vehicles."
+                "description": "Total kilometers actually operated by the vehicles. If omitted, will fetch from database."
             },
             "planned_km": {
                 "type": "number",
-                "description": "Total kilometers planned to be operated."
+                "description": "Total kilometers planned to be operated. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate efficiency for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "operated_km",
-            "planned_km",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 breakdown_rate_func = FunctionDeclaration(
     name="calculate_breakdown_rate",
-    description="Calculate the Breakdown Rate (Mechanical Reliability) as a percentage based on kilometers lost due to breakdowns and total operated kilometers.",
+    description="Calculate the Breakdown Rate (Mechanical Reliability) as a percentage based on kilometers lost due to breakdowns and total operated kilometers. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "lost_km_out_of_control": {
                 "type": "number",
-                "description": "Kilometers lost due to mechanical breakdowns or issues outside of control."
+                "description": "Kilometers lost due to mechanical breakdowns or issues outside of control. If omitted, will fetch from database."
             },
             "operated_km": {
                 "type": "number",
-                "description": "Total kilometers actually operated by the vehicles."
+                "description": "Total kilometers actually operated by the vehicles. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate breakdown rate for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "lost_km_out_of_control",
-            "operated_km",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 trip_completion_rate_func = FunctionDeclaration(
     name="calculate_trip_completion_rate",
-    description="Calculate the Trip Completion Rate as a percentage based on completed trips and total planned trips.",
+    description="Calculate the Trip Completion Rate as a percentage based on completed trips and total planned trips. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "trips_completed": {
                 "type": "integer",
-                "description": "Number of trips that were successfully completed."
+                "description": "Number of trips that were successfully completed. If omitted, will fetch from database."
             },
             "total_planned_trips": {
                 "type": "integer",
-                "description": "Total number of trips that were planned."
+                "description": "Total number of trips that were planned. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate trip completion rate for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "trips_completed",
-            "total_planned_trips",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
 
@@ -374,21 +409,28 @@ calculate_farebox_recovery_ratio_func = FunctionDeclaration(
 )
 service_consistency_func = FunctionDeclaration(
     name="calculate_service_consistency",
-    description="Calculate the Service Consistency as the standard deviation of punctuality differences.",
+    description="Calculate the Service Consistency as the standard deviation of punctuality differences. Can calculate based on specific values or retrieve values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "punctuality_differences": {
                 "type": "array",
                 "items": {"type": "number"},
-                "description": "List of punctuality differences (in minutes or seconds) for each trip."
+                "description": "List of punctuality differences (in minutes) for each trip. If omitted, will fetch from database."
+            },
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate consistency for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
             }
         },
-        "required": [
-            "punctuality_differences",
-        ],
+        "required": []  # None required as we can fetch defaults
     },
 )
+
 get_performance_metrics_func = FunctionDeclaration(
     name="get_performance_metrics",
     description="Get a list of all available transit performance metrics and their descriptions.",
@@ -586,43 +628,295 @@ if prompt:
                                     "content": error_message,
                                 }   )
                     if response.function_call.name == "calculate_seat_occupancy":
-                        total_passengers = int(params["total_passengers"])
-                        total_available_seats = int(params["total_available_seats"])
-                        if total_available_seats == 0:
-                            seat_occupancy_rate = 0
+                        # Check if specific values were provided
+                        if "total_passengers" in params and "total_available_seats" in params:
+                            total_passengers = int(params["total_passengers"])
+                            total_available_seats = int(params["total_available_seats"])
+                            
+                            if total_available_seats == 0:
+                                seat_occupancy_rate = 0
+                            else:
+                                seat_occupancy_rate = (total_passengers / total_available_seats) * 100
+                            
+                            api_response = f"{seat_occupancy_rate:.2f}%"
                         else:
-                            seat_occupancy_rate = (total_passengers / total_available_seats) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                AVG(total_passengers_on_vehicle) as avg_passengers,
+                                AVG(actual_number_of_seats_in_vehicle) as avg_seats,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            avg_passengers = data.avg_passengers or 0
+                            avg_seats = data.avg_seats or 0
+                            record_count = data.record_count
+                            
+                            if avg_seats == 0:
+                                seat_occupancy_rate = 0
+                            else:
+                                seat_occupancy_rate = (avg_passengers / avg_seats) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "seat_occupancy_rate": f"{seat_occupancy_rate:.2f}%",
+                                "avg_passengers": float(avg_passengers),
+                                "avg_seats": float(avg_seats),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{seat_occupancy_rate:.2f}%"
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
                     if response.function_call.name == "calculate_service_reliability":
-                        operated_km = float(params["operated_km"])
-                        lost_km = float(params["lost_km"])
-                        
-                        total_planned_km = operated_km + lost_km
-                        
-                        if total_planned_km == 0:
-                            service_reliability = 0
+                        # Check if specific values were provided
+                        if "operated_km" in params and "lost_km" in params:
+                            operated_km = float(params["operated_km"])
+                            lost_km = float(params["lost_km"])
+                            
+                            total_planned_km = operated_km + lost_km
+                            
+                            if total_planned_km == 0:
+                                service_reliability = 0
+                            else:
+                                service_reliability = (operated_km / total_planned_km) * 100
+                            
+                            api_response = f"{service_reliability:.2f}%"
                         else:
-                            service_reliability = (operated_km / total_planned_km) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(operated_km) as total_operated_km,
+                                SUM(lost_km) as total_lost_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            total_operated_km = data.total_operated_km or 0
+                            total_lost_km = data.total_lost_km or 0
+                            record_count = data.record_count
+                            
+                            total_planned_km = total_operated_km + total_lost_km
+                            
+                            if total_planned_km == 0:
+                                service_reliability = 0
+                            else:
+                                service_reliability = (total_operated_km / total_planned_km) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "service_reliability": f"{service_reliability:.2f}%",
+                                "total_operated_km": float(total_operated_km),
+                                "total_lost_km": float(total_lost_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{service_reliability:.2f}%"
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
                   
                     if response.function_call.name == "calculate_lost_km_rate":
-                        lost_km = float(params["lost_km"])
-                        planned_km = float(params["planned_km"])
-                        
-                        if planned_km == 0:
-                            lost_km_rate = 0
+                        # Check if specific values were provided
+                        if "lost_km" in params and "planned_km" in params:
+                            lost_km = float(params["lost_km"])
+                            planned_km = float(params["planned_km"])
+                            
+                            if planned_km == 0:
+                                lost_km_rate = 0
+                            else:
+                                lost_km_rate = (lost_km / planned_km) * 100
+                            
+                            api_response = f"{lost_km_rate:.2f}%"
                         else:
-                            lost_km_rate = (lost_km / planned_km) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(lost_km) as total_lost_km,
+                                SUM(planned_km) as total_planned_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            total_lost_km = data.total_lost_km or 0
+                            total_planned_km = data.total_planned_km or 0
+                            record_count = data.record_count
+                            
+                            if total_planned_km == 0:
+                                lost_km_rate = 0
+                            else:
+                                lost_km_rate = (total_lost_km / total_planned_km) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "lost_km_rate": f"{lost_km_rate:.2f}%",
+                                "total_lost_km": float(total_lost_km),
+                                "total_planned_km": float(total_planned_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{lost_km_rate:.2f}%"
+                        api_requests_and_responses.append(
+                            [response.function_call.name, params, api_response]
+                        )
+
+                    if response.function_call.name == "calculate_service_utilization_rate":
+                        # Check if specific values were provided
+                        if "operated_seats_km" in params and "planned_seats_km" in params:
+                            operated_seats_km = float(params["operated_seats_km"])
+                            planned_seats_km = float(params["planned_seats_km"])
+                            
+                            if planned_seats_km == 0:
+                                utilization_rate = 0
+                            else:
+                                utilization_rate = (operated_seats_km / planned_seats_km) * 100
+                            
+                            api_response = f"{utilization_rate:.2f}%"
+                        else:
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(operated_km * actual_number_of_seats_in_vehicle) as total_operated_seats_km,
+                                SUM(planned_km * actual_number_of_seats_in_vehicle) as total_planned_seats_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            total_operated_seats_km = data.total_operated_seats_km or 0
+                            total_planned_seats_km = data.total_planned_seats_km or 0
+                            record_count = data.record_count
+                            
+                            if total_planned_seats_km == 0:
+                                utilization_rate = 0
+                            else:
+                                utilization_rate = (total_operated_seats_km / total_planned_seats_km) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "service_utilization_rate": f"{utilization_rate:.2f}%",
+                                "total_operated_seats_km": float(total_operated_seats_km),
+                                "total_planned_seats_km": float(total_planned_seats_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
+                        
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
@@ -646,55 +940,220 @@ if prompt:
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
-                    if response.function_call.name == "calculate_service_utilization_rate":
-                        operated_seats_km = float(params["operated_seats_km"])
-                        planned_seats_km = float(params["planned_seats_km"])
-                        
-                        if planned_seats_km == 0:
-                            utilization_rate = 0
-                        else:
-                            utilization_rate = (operated_seats_km / planned_seats_km) * 100
-                        
-                        api_response = f"{utilization_rate:.2f}%"
-                        api_requests_and_responses.append(
-                            [response.function_call.name, params, api_response]
-                        )
+                    
                     if response.function_call.name == "calculate_route_efficiency":
-                        operated_km = float(params["operated_km"])
-                        planned_km = float(params["planned_km"])
-                        
-                        if planned_km == 0:
-                            route_efficiency = 0
+                        # Check if specific values were provided
+                        if "operated_km" in params and "planned_km" in params:
+                            operated_km = float(params["operated_km"])
+                            planned_km = float(params["planned_km"])
+                            
+                            if planned_km == 0:
+                                route_efficiency = 0
+                            else:
+                                route_efficiency = (operated_km / planned_km) * 100
+                            
+                            api_response = f"{route_efficiency:.2f}%"
                         else:
-                            route_efficiency = (operated_km / planned_km) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(operated_km) as total_operated_km,
+                                SUM(planned_km) as total_planned_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            total_operated_km = data.total_operated_km or 0
+                            total_planned_km = data.total_planned_km or 0
+                            record_count = data.record_count
+                            
+                            if total_planned_km == 0:
+                                route_efficiency = 0
+                            else:
+                                route_efficiency = (total_operated_km / total_planned_km) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "route_efficiency": f"{route_efficiency:.2f}%",
+                                "total_operated_km": float(total_operated_km),
+                                "total_planned_km": float(total_planned_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{route_efficiency:.2f}%"
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
                     if response.function_call.name == "calculate_breakdown_rate":
-                        lost_km_out_of_control = float(params["lost_km_out_of_control"])
-                        operated_km = float(params["operated_km"])
-                        
-                        if operated_km == 0:
-                            breakdown_rate = 0
+                        # Check if specific values were provided
+                        if "lost_km_out_of_control" in params and "operated_km" in params:
+                            lost_km_out_of_control = float(params["lost_km_out_of_control"])
+                            operated_km = float(params["operated_km"])
+                            
+                            if operated_km == 0:
+                                breakdown_rate = 0
+                            else:
+                                breakdown_rate = (lost_km_out_of_control / operated_km) * 100
+                            
+                            api_response = f"{breakdown_rate:.2f}%"
                         else:
-                            breakdown_rate = (lost_km_out_of_control / operated_km) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(lost_km_out_of_control) as total_lost_km_out_of_control,
+                                SUM(operated_km) as total_operated_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            total_lost_km_out_of_control = data.total_lost_km_out_of_control or 0
+                            total_operated_km = data.total_operated_km or 0
+                            record_count = data.record_count
+                            
+                            if total_operated_km == 0:
+                                breakdown_rate = 0
+                            else:
+                                breakdown_rate = (total_lost_km_out_of_control / total_operated_km) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "breakdown_rate": f"{breakdown_rate:.2f}%",
+                                "total_lost_km_out_of_control": float(total_lost_km_out_of_control),
+                                "total_operated_km": float(total_operated_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{breakdown_rate:.2f}%"
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
                     if response.function_call.name == "calculate_trip_completion_rate":
-                        trips_completed = int(params["trips_completed"])
-                        total_planned_trips = int(params["total_planned_trips"])
-                        
-                        if total_planned_trips == 0:
-                            trip_completion_rate = 0
+                        # Check if specific values were provided
+                        if "trips_completed" in params and "total_planned_trips" in params:
+                            trips_completed = int(params["trips_completed"])
+                            total_planned_trips = int(params["total_planned_trips"])
+                            
+                            if total_planned_trips == 0:
+                                trip_completion_rate = 0
+                            else:
+                                trip_completion_rate = (trips_completed / total_planned_trips) * 100
+                            
+                            api_response = f"{trip_completion_rate:.2f}%"
                         else:
-                            trip_completion_rate = (trips_completed / total_planned_trips) * 100
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    from datetime import timedelta
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(CASE WHEN trip_status = 'completed' THEN 1 ELSE 0 END) as trips_completed,
+                                COUNT(*) as total_planned_trips,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            trips_completed = data.trips_completed or 0
+                            total_planned_trips = data.total_planned_trips or 0
+                            record_count = data.record_count
+                            
+                            if total_planned_trips == 0:
+                                trip_completion_rate = 0
+                            else:
+                                trip_completion_rate = (trips_completed / total_planned_trips) * 100
+                            
+                            # Include more context in the response for debugging
+                            api_response = {
+                                "trip_completion_rate": f"{trip_completion_rate:.2f}%",
+                                "trips_completed": int(trips_completed),
+                                "total_planned_trips": int(total_planned_trips),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            
+                            api_response = json.dumps(api_response)
                         
-                        api_response = f"{trip_completion_rate:.2f}%"
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
