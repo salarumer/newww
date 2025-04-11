@@ -2,7 +2,8 @@ import time
 import json
 import ast
 import pandas as pd
-from datetime import datetime
+
+from datetime import datetime, timedelta
 
 import streamlit as st
 from google import genai
@@ -76,24 +77,20 @@ st.markdown(
 prompt_categories = {
     "Basic Information": [
         "What performance metrics are available in the dashboard?",
-        "Give Me Percentages For All Punctuality Categories",
-        "How many routes are currently active in the system?"
+        "Calculate Lost Km Rate for me pleasee",
+      
     ],
     "Route Performance": [
-        "Which route has the highest seat occupancy in the last month?",
-        "Compare the performance of Route 101 and Route 202",
-        "Show me the routes with the lowest farebox recovery ratio"
+        "what is route 23S seat occupancy rate",
+        "what is route X3 lost km rate rate",
+       
     ],
     "Monthly Analysis": [
         "Generate a monthly summary for April 2023",
-        "How does this month's performance compare to last month?",
-        "What was the seat occupancy trend over the past 3 months?"
+      
+        "What was the seat occupancy Rate ?"
     ],
-    "Financial & Operations": [
-        "What's our current farebox recovery ratio?",
-        "Calculate the revenue per kilometer for Route 101",
-        "What's our overall lost kilometer rate this month?"
-    ]
+    
 }
 
 # Initialize prompt_value in session state if it doesn't exist
@@ -383,44 +380,25 @@ trip_completion_rate_func = FunctionDeclaration(
 
 calculate_farebox_recovery_ratio_func = FunctionDeclaration(
     name="calculate_farebox_recovery_ratio",
-    description="Calculate the Farebox Recovery Ratio as a percentage based on fare revenue and operating costs.",
+    description="Calculate the Farebox Recovery Ratio as a percentage based on fare revenue and operating costs. Can calculate based on specific values or retrieve average values from the database.",
     parameters={
         "type": "object",
         "properties": {
             "fare_by_card_passengers": {
                 "type": "number",
-                "description": "Total fare revenue from passengers paying by card."
+                "description": "Total fare revenue from passengers paying by card. If omitted, will fetch from database."
             },
             "fare_by_cash_passengers": {
                 "type": "number",
-                "description": "Total fare revenue from passengers paying by cash."
+                "description": "Total fare revenue from passengers paying by cash. If omitted, will fetch from database."
             },
             "operated_km": {
                 "type": "number",
-                "description": "Total kilometers operated."
-            }
-        },
-        "required": [
-            "fare_by_card_passengers",
-            "fare_by_cash_passengers",
-            "operated_km",
-        ],
-    },
-)
-service_consistency_func = FunctionDeclaration(
-    name="calculate_service_consistency",
-    description="Calculate the Service Consistency as the standard deviation of punctuality differences. Can calculate based on specific values or retrieve values from the database.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "punctuality_differences": {
-                "type": "array",
-                "items": {"type": "number"},
-                "description": "List of punctuality differences (in minutes) for each trip. If omitted, will fetch from database."
+                "description": "Total kilometers operated. If omitted, will fetch from database."
             },
             "route_id": {
                 "type": "string",
-                "description": "Optional route ID to calculate consistency for a specific route."
+                "description": "Optional route ID to calculate farebox recovery ratio for a specific route."
             },
             "time_period": {
                 "type": "string",
@@ -430,6 +408,7 @@ service_consistency_func = FunctionDeclaration(
         "required": []  # None required as we can fetch defaults
     },
 )
+
 
 get_performance_metrics_func = FunctionDeclaration(
     name="get_performance_metrics",
@@ -475,6 +454,28 @@ monthly_summary_func = FunctionDeclaration(
         ],
     },
 )
+calculate_punctuality_func = FunctionDeclaration(
+    name="calculate_punctuality",
+    description="Calculate the on-time punctuality rates based on punctuality categories. Returns percentage of trips in each category (Pending, On time, Late, Early).",
+    parameters={
+        "type": "object",
+        "properties": {
+            "route_id": {
+                "type": "string",
+                "description": "Optional route ID to calculate punctuality for a specific route."
+            },
+            "time_period": {
+                "type": "string",
+                "description": "Optional time period ('current_month', 'last_month', or leave blank for all time)."
+            },
+            "category": {
+                "type": "string",
+                "description": "Optional specific category to filter by ('Pending', 'Onetime', 'Late', 'Early'). Leave blank for all categories."
+            }
+        },
+        "required": []  # None required as we can calculate for all data
+    },
+)
 sql_query_tool = Tool(
     function_declarations=[
         list_datasets_func,
@@ -482,7 +483,7 @@ sql_query_tool = Tool(
         get_table_func,
         sql_query_func,
         calculate_seat_occupancy_func,
-         service_reliability_func,
+        service_reliability_func,
         lost_km_rate_func,
         service_utilization_rate_func,
         route_efficiency_func,
@@ -490,9 +491,10 @@ sql_query_tool = Tool(
         trip_completion_rate_func,
         calculate_farebox_recovery_ratio_func,
         get_performance_metrics_func,
-        service_consistency_func,
+        
         check_date_availability_func,
         monthly_summary_func,
+        
     ],
 )
 
@@ -921,11 +923,54 @@ if prompt:
                             [response.function_call.name, params, api_response]
                         )
                     if response.function_call.name == "calculate_farebox_recovery_ratio":
-                        fare_by_card_passengers = float(params["fare_by_card_passengers"])
-                        fare_by_cash_passengers = float(params["fare_by_cash_passengers"])
-                        operated_km = float(params["operated_km"])
+                        # Check if specific values were provided
+                        if "fare_by_card_passengers" in params and "fare_by_cash_passengers" in params and "operated_km" in params:
+                            fare_by_card_passengers = float(params["fare_by_card_passengers"])
+                            fare_by_cash_passengers = float(params["fare_by_cash_passengers"])
+                            operated_km = float(params["operated_km"])
+                        else:
+                            # If no specific values provided, query from database
+                            route_filter = ""
+                            if 'route_id' in params and params['route_id']:
+                                route_filter = f"AND route = '{params['route_id']}'"
+                            
+                            # Default to all data if no time period specified
+                            time_filter = ""
+                            if 'time_period' in params:
+                                if params['time_period'] == 'current_month':
+                                    current_month = datetime.now().strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                                elif params['time_period'] == 'last_month':
+                                    last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                    time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                            
+                            # Add WHERE keyword only if it's not already there (for route filter)
+                            if route_filter and not time_filter:
+                                route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
+                            
+                            query = f"""
+                            SELECT 
+                                SUM(fare_by_card_passengers) as total_card_fare,
+                                SUM(fare_by_cash_passengers) as total_cash_fare,
+                                SUM(operated_km) as total_operated_km,
+                                COUNT(*) as record_count
+                            FROM 
+                                {BIGQUERY_DATASET_ID}.tansittable
+                            {time_filter}
+                            {route_filter}
+                            """
+                            
+                            job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                            query_job = bq_client.query(query, job_config=job_config)
+                            result = query_job.result()
+                            data = list(result)[0]
+                            
+                            fare_by_card_passengers = data.total_card_fare or 0
+                            fare_by_cash_passengers = data.total_cash_fare or 0
+                            operated_km = data.total_operated_km or 0
+                            record_count = data.record_count
                         
-                        # Using static value for cost_per_km instead of getting it from params
+                        # Using static value for cost_per_km
                         cost_per_km = 2.0
                         
                         total_fare_revenue = fare_by_card_passengers + fare_by_cash_passengers
@@ -936,7 +981,23 @@ if prompt:
                         else:
                             farebox_recovery_ratio = (total_fare_revenue / estimated_operating_cost) * 100
                         
-                        api_response = f"{farebox_recovery_ratio:.2f}%"
+                        # If we fetched from database, include more context in the response
+                        if "fare_by_card_passengers" not in params or "fare_by_cash_passengers" not in params or "operated_km" not in params:
+                            api_response = {
+                                "farebox_recovery_ratio": f"{farebox_recovery_ratio:.2f}%",
+                                "total_fare_revenue": float(total_fare_revenue),
+                                "fare_by_card_passengers": float(fare_by_card_passengers),
+                                "fare_by_cash_passengers": float(fare_by_cash_passengers),
+                                "operated_km": float(operated_km),
+                                "estimated_operating_cost": float(estimated_operating_cost),
+                                "cost_per_km": float(cost_per_km),
+                                "record_count": int(record_count),
+                                "query_used": query
+                            }
+                            api_response = json.dumps(api_response)
+                        else:
+                            api_response = f"{farebox_recovery_ratio:.2f}%"
+                        
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
@@ -1038,7 +1099,6 @@ if prompt:
                                     current_month = datetime.now().strftime("%Y-%m")
                                     time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
                                 elif params['time_period'] == 'last_month':
-                                    from datetime import timedelta
                                     last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
                                     time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
                             
@@ -1110,7 +1170,6 @@ if prompt:
                                     current_month = datetime.now().strftime("%Y-%m")
                                     time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
                                 elif params['time_period'] == 'last_month':
-                                    from datetime import timedelta
                                     last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
                                     time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
                             
@@ -1118,9 +1177,10 @@ if prompt:
                             if route_filter and not time_filter:
                                 route_filter = "WHERE " + route_filter[4:]  # Remove the leading "AND "
                             
+                            # Using operated_km to determine completed trips
                             query = f"""
                             SELECT 
-                                SUM(CASE WHEN trip_status = 'completed' THEN 1 ELSE 0 END) as trips_completed,
+                                SUM(CASE WHEN operated_km > 0 THEN 1 ELSE 0 END) as trips_completed,
                                 COUNT(*) as total_planned_trips,
                                 COUNT(*) as record_count
                             FROM 
@@ -1157,20 +1217,97 @@ if prompt:
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
                         )
-                    if response.function_call.name == "calculate_service_consistency":
-   
-    
-                        punctuality_differences = params["punctuality_differences"]
+                    if response.function_call.name == "calculate_punctuality":
+                        params = json.loads(response.function_call.arguments)
                         
-                        if not punctuality_differences or len(punctuality_differences) <= 1:
-                            service_consistency = 0
-                        else:
-                            service_consistency = np.std(punctuality_differences)
+                        # Build query filters
+                        route_filter = ""
+                        if 'route_id' in params and params['route_id']:
+                            route_filter = f"AND route = '{params['route_id']}'"
                         
-                        api_response = f"{service_consistency:.2f} minutes"  # Assuming differences are in minutes
+                        category_filter = ""
+                        if 'category' in params and params['category']:
+                            category_filter = f"AND punctuality_category = '{params['category']}'"
+                        
+                        # Default to all data if no time period specified
+                        time_filter = ""
+                        if 'time_period' in params:
+                            if params['time_period'] == 'current_month':
+                                current_month = datetime.now().strftime("%Y-%m")
+                                time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{current_month}'"
+                            elif params['time_period'] == 'last_month':
+                                last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                                time_filter = f"WHERE FORMAT_DATE('%Y-%m', service_day) = '{last_month}'"
+                        
+                        # Add WHERE keyword only if it's not already there (for route and category filters)
+                        if (route_filter or category_filter) and not time_filter:
+                            # Remove the leading "AND " from the first filter
+                            if route_filter:
+                                route_filter = "WHERE " + route_filter[4:]
+                            elif category_filter:
+                                category_filter = "WHERE " + category_filter[4:]
+                        
+                        # Query to get total counts and counts by category
+                        query = f"""
+                        SELECT 
+                            punctuality_category,
+                            COUNT(*) as category_count
+                        FROM 
+                            {BIGQUERY_DATASET_ID}.tansittable
+                        {time_filter}
+                        {route_filter}
+                        {category_filter}
+                        GROUP BY 
+                            punctuality_category
+                        """
+                        
+                        # Execute the query
+                        job_config = bigquery.QueryJobConfig(maximum_bytes_billed=100000000)
+                        query_job = bq_client.query(query, job_config=job_config)
+                        results = query_job.result()
+                        
+                        # Convert query results to a dictionary
+                        category_counts = {}
+                        total_count = 0
+                        
+                        for row in results:
+                            category = row.punctuality_category if row.punctuality_category else "Unknown"
+                            count = row.category_count
+                            category_counts[category] = count
+                            total_count += count
+                        
+                        # Calculate percentages for each category
+                        category_percentages = {}
+                        for category, count in category_counts.items():
+                            percentage = (count / total_count * 100) if total_count > 0 else 0
+                            category_percentages[category] = f"{percentage:.2f}%"
+                        
+                        # Ensure all standard categories are included, even if they have 0 count
+                        standard_categories = ["Pending", "Onetime", "Late", "Early"]
+                        for category in standard_categories:
+                            if category not in category_percentages:
+                                category_percentages[category] = "0.00%"
+                        
+                        # Prepare response
+                        response_data = {
+                            "punctuality_breakdown": category_percentages,
+                            "total_trips_analyzed": total_count,
+                            "query_used": query
+                        }
+                        
+                        # If a specific category was requested, highlight that information
+                        if 'category' in params and params['category']:
+                            requested_category = params['category']
+                            if requested_category in category_percentages:
+                                response_data["requested_category_percentage"] = category_percentages[requested_category]
+                        
+                        api_response = json.dumps(response_data)
+                        
                         api_requests_and_responses.append(
                             [response.function_call.name, params, api_response]
-                        )   
+                        )
+                    
+                    
                     if response.function_call.name == "get_performance_metrics":
                          performance_metrics = [
                      {
